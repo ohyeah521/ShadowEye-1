@@ -25,14 +25,12 @@ import java.util.Calendar;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-class DataSaver
-{
+class DataSaver {
     String mPath = null;
     public DataSaver() {
     }
 
-    String getDateString()
-    {
+    String getDateString() {
         Calendar c = Calendar.getInstance();
         String Datestring = "" + c.get(Calendar.YEAR)
                 + String.format("%02d", (c.get(Calendar.MONTH) + 1))
@@ -43,8 +41,7 @@ class DataSaver
         return Datestring;
     }
 
-    void Open()
-    {
+    void Open() {
         Close();
 
         String Datestring = getDateString();
@@ -59,8 +56,7 @@ class DataSaver
         mPath = null;
     }
 
-    void SavePicture(byte[] data)
-    {
+    void SavePicture(byte[] data) {
         if(mPath==null)return;
         String Datestring = getDateString();
         String Path = mPath + "/" + Datestring + ".zip";
@@ -84,16 +80,83 @@ class DataSaver
 
 public class ShadowEyeActivity extends Activity {
 
+    final int NULL_MODE = 0, PHOTO_MODE = 1, VIDEO_MODE = 2;
+    protected int high = 500;
+    protected int wide = 500;
     WakeLock mWakeLock = null;
     AudioManager mAudioManager;
     Camera mCamera = null;
     Vibrator mVibrator = null;
     SurfaceTexture mSt = null;
-
-    protected int high = 500;
-    protected int wide = 500;
-
     DataSaver mDataSaver = new DataSaver();
+    AutoFocusCallback mAfc = new AutoFocusCallback() {
+        @Override
+        public void onAutoFocus(boolean success, Camera camera) {
+            if (success) {
+                try {
+                    camera.takePicture(null, null, mPcb);
+                } catch (Exception e) {
+                    camera.release();
+                    CloseCamera();
+                    mDataSaver.Close();
+                }
+            } else {
+                mCamera.autoFocus(mAfc);
+            }
+        }
+    };
+    PreviewCallback PreviewCb = new PreviewCallback() {
+        public double LastLightValue = 100000;
+        long stableTime = 0;
+        boolean isFocused = false;
+        int AutoFocusLightThreshold = 5;
+
+        public void onPreviewFrame(byte[] data, Camera camera) {
+            try {
+                int[] rgb = new int[data.length];
+                decodeYUV420SP(rgb, data, wide, high);
+
+                double bright = getLight(rgb);
+                long currentTime = System.currentTimeMillis();
+
+                // Light Change
+                if (LastLightValue - AutoFocusLightThreshold > bright
+                        || bright > LastLightValue
+                        + AutoFocusLightThreshold) {
+                    LastLightValue = bright;
+                    stableTime = currentTime;
+                    isFocused = false;
+                } else if (!isFocused) { // If Change Little ,Focus Camera
+                    if (currentTime - stableTime > 500) {
+                        mVibrator.vibrate(50);
+                        mCamera.setPreviewCallback(null);
+                        camera.autoFocus(mAfc);
+                        isFocused = true;
+                    }
+                }
+
+            } catch (Exception e) {
+                CloseCamera();
+            }
+        }
+    };
+    PictureCallback mPcb = new PictureCallback() {
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            long l[] = {0, 100, 100, 100};
+            mVibrator.vibrate(l, -1);
+
+            mDataSaver.SavePicture(data);
+            mCamera.startPreview();
+            mCamera.setPreviewCallback(PreviewCb);
+            //camera.release();
+            //CloseCamera();
+        }
+    };
+    long LastBackPress = 0;
+    int mCameraStatue = NULL_MODE;
+    boolean mBackCamera = true;
+    long lastVolumnKeyPressTime = 0;
 
     static public void decodeYUV420SP(int[] rgb, byte[] yuv420sp, int width,
                                       int height) {
@@ -134,6 +197,13 @@ public class ShadowEyeActivity extends Activity {
         }
     }
 
+    // @Override
+    // public boolean onCreateOptionsMenu(Menu menu) {
+    // // Inflate the menu; this adds items to the action bar if it is present.
+    // getMenuInflater().inflate(R.menu.main, menu);
+    // return true;
+    // }
+
     public double getLight(int rgb[]) {
         int i;
         double bright = 0;
@@ -146,77 +216,6 @@ public class ShadowEyeActivity extends Activity {
         }
         return bright / rgb.length;
     }
-
-    PictureCallback mPcb = new PictureCallback() {
-        @Override
-        public void onPictureTaken(byte[] data, Camera camera) {
-            long l[] = { 0, 100, 100, 100 };
-            mVibrator.vibrate(l, -1);
-
-            mDataSaver.SavePicture(data);
-            mCamera.startPreview();
-            mCamera.setPreviewCallback(PreviewCb);
-            //camera.release();
-            //CloseCamera();
-        }
-    };
-
-    AutoFocusCallback mAfc = new AutoFocusCallback() {
-        @Override
-        public void onAutoFocus(boolean success, Camera camera) {
-            if (success)
-            {
-                try {
-                    camera.takePicture(null, null, mPcb);
-                } catch (Exception e) {
-                    camera.release();
-                    CloseCamera();
-                    mDataSaver.Close();
-                }
-            }
-            else
-            {
-                mCamera.autoFocus(mAfc);
-            }
-        }
-    };
-
-    PreviewCallback PreviewCb = new PreviewCallback() {
-        public double LastLightValue = 100000;
-        long stableTime = 0;
-        boolean isFocused = false;
-        int AutoFocusLightThreshold = 5;
-
-        public void onPreviewFrame(byte[] data, Camera camera) {
-            try {
-                int[] rgb = new int[data.length];
-                decodeYUV420SP(rgb, data, wide, high);
-
-                double bright = getLight(rgb);
-                long currentTime = System.currentTimeMillis();
-
-                // Light Change
-                if (LastLightValue - AutoFocusLightThreshold > bright
-                        || bright > LastLightValue
-                        + AutoFocusLightThreshold) {
-                    LastLightValue = bright;
-                    stableTime = currentTime;
-                    isFocused = false;
-                } else if (!isFocused)// If Change Little ,Focus Camera
-                {
-                    if (currentTime - stableTime > 500) {
-                        mVibrator.vibrate(50);
-                        mCamera.setPreviewCallback(null);
-                        camera.autoFocus(mAfc);
-                        isFocused = true;
-                    }
-                }
-
-            } catch (Exception e) {
-                CloseCamera();
-            }
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -250,8 +249,6 @@ public class ShadowEyeActivity extends Activity {
         super.onDestroy();
     }
 
-    long LastBackPress = 0;
-
     @Override
     public void onBackPressed() {
         long currentTime = System.currentTimeMillis();
@@ -261,13 +258,6 @@ public class ShadowEyeActivity extends Activity {
             super.onBackPressed();
         }
     }
-
-    // @Override
-    // public boolean onCreateOptionsMenu(Menu menu) {
-    // // Inflate the menu; this adds items to the action bar if it is present.
-    // getMenuInflater().inflate(R.menu.main, menu);
-    // return true;
-    // }
 
     private void setBritness(float brightness) {
 
@@ -281,18 +271,12 @@ public class ShadowEyeActivity extends Activity {
 
     }
 
-    final int NULL_MODE = 0,PHOTO_MODE = 1, VIDEO_MODE = 2;
-    int mCameraStatue = NULL_MODE;
-    boolean mBackCamera = true;
-    long lastVolumnKeyPressTime = 0;
     public void controlCamera(boolean BackCamera) {
         mVibrator.vibrate(50);
 
-        if(mCameraStatue == NULL_MODE)
-        {
+        if(mCameraStatue == NULL_MODE) {
             long currentTime = System.currentTimeMillis();
-            if(lastVolumnKeyPressTime + 3000 < currentTime)
-            {
+            if(lastVolumnKeyPressTime + 3000 < currentTime) {
                 lastVolumnKeyPressTime = currentTime;
                 mBackCamera = BackCamera;
                 return;
@@ -300,8 +284,7 @@ public class ShadowEyeActivity extends Activity {
             lastVolumnKeyPressTime = 0;
             if (mCamera == null) {
                 mCamera = OpenCamera(mBackCamera);
-                if (mCamera != null) // Auto Focus
-                {
+                if (mCamera != null) {// Auto Focus
                     mDataSaver.Open();
                     mCamera.startPreview();
                 }
@@ -309,12 +292,10 @@ public class ShadowEyeActivity extends Activity {
         }
         if (mBackCamera == BackCamera) // TakePhoto
         {
-            if(mCameraStatue==PHOTO_MODE)
-            {
+            if(mCameraStatue==PHOTO_MODE) {
                 mCamera.takePicture(null, null, mPcb);
             }
-            else if(mCameraStatue==NULL_MODE)
-            {
+            else if(mCameraStatue==NULL_MODE) {
                 mCamera.setPreviewCallback(PreviewCb);
                 mCameraStatue = PHOTO_MODE;
             }
@@ -442,7 +423,6 @@ public class ShadowEyeActivity extends Activity {
 
 
     private void acquireWakeLock() {
-
         if (null == mWakeLock) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK
