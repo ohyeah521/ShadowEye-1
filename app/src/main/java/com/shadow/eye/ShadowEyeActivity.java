@@ -185,7 +185,7 @@ public class ShadowEyeActivity extends Activity {
     }
 
     private String getDateString() {
-        return new SimpleDateFormat("yyyy-MM-dd_HH-MM-ss", Locale.CHINESE).format(new Date());
+        return new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.CHINESE).format(new Date());
     }
 
     private void setBrightness(float brightness) {
