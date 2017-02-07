@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
+import android.os.SystemClock;
 import android.os.Vibrator;
 import android.view.KeyEvent;
 import android.view.Window;
@@ -28,18 +29,24 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public class ShadowEyeActivity extends Activity {
-
     private static final int NULL_MODE = 0, PHOTO_MODE = 1;
     private static final int CAMERA_PREVIEW_WIDTH = 500, CAMERA_PREVIEW_HEIGHT = 500;
+    private final SurfaceTexture mSurfaceTexture = new SurfaceTexture(0);
     private WakeLock mWakeLock = null;
     private AudioManager mAudioManager;
     private Camera mCamera = null;
     private Vibrator mVibrator = null;
     private String mCurrentPath;
-    private long mLastBackPress = 0;
-    private int mCameraStatue = NULL_MODE;
-    private boolean mBackCamera = true;
-    private long mLastVolumeKeyPressTime = 0;
+    private final PictureCallback mPictureCallback = new PictureCallback() {
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            long l[] = {0, 100, 100, 100};
+            mVibrator.vibrate(l, -1);
+            savePicture(data);
+            mCamera.startPreview();
+            mCamera.setPreviewCallback(mPreviewCallback);
+        }
+    };
     private final AutoFocusCallback mAutoFocusCallback = new AutoFocusCallback() {
         @Override
         public void onAutoFocus(boolean success, Camera camera) {
@@ -54,22 +61,22 @@ public class ShadowEyeActivity extends Activity {
             }
         }
     };
+    private long mLastBackPress = 0;
+    private int mCameraStatue = NULL_MODE;
+    private boolean mBackCamera = true;
     private final PreviewCallback mPreviewCallback = new PreviewCallback() {
-        double lastLightValue = 100000;
+        final int autoFocusLightThreshold = 16;
+        double lastLight = 100000;
         long stableTime = 0;
         boolean isFocused = false;
-        final int autoFocusLightThreshold = 5;
 
         public void onPreviewFrame(byte[] data, Camera camera) {
             try {
-                double bright = getYUV420SPLight(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
-                long currentTime = System.currentTimeMillis();
-
+                double light = getYUV420SPLight(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
+                long currentTime = SystemClock.elapsedRealtime();
                 // Light Change
-                if (lastLightValue - autoFocusLightThreshold > bright
-                        || bright > lastLightValue
-                        + autoFocusLightThreshold) {
-                    lastLightValue = bright;
+                if (Math.abs(lastLight - light) > autoFocusLightThreshold) {
+                    lastLight = light;
                     stableTime = currentTime;
                     isFocused = false;
                 } else if (!isFocused) { // If Change Little ,Focus Camera
@@ -94,17 +101,66 @@ public class ShadowEyeActivity extends Activity {
             }
         }
     };
-    private final PictureCallback mPictureCallback = new PictureCallback() {
-        @Override
-        public void onPictureTaken(byte[] data, Camera camera) {
-            long l[] = {0, 100, 100, 100};
-            mVibrator.vibrate(l, -1);
-            savePicture(data);
-            mCamera.startPreview();
-            mCamera.setPreviewCallback(mPreviewCallback);
+    private long mLastVolumeKeyPressTime = 0;
+
+    /**
+     * 通过YUV420SP数组 计算出亮度
+     *
+     * @param yuv420sp 图像帧数组
+     * @param width    宽度
+     * @param height   高度
+     * @return 返回亮度, 这亮度值始终大于0
+     */
+    public static double getYUV420SPLight(byte[] yuv420sp, int width,
+                                          int height) {
+        double bright = 0;
+        int total = 0;
+        final int frameSize = width * height, xEdge = width / 3, yEdge = height / 3, focusWidth = width - xEdge * 2, focusHeight = height - yEdge * 2;
+        final int dt = 32, dx = (focusWidth <= dt ? 1 : focusWidth / dt), dy = (focusHeight <= dt ? 1 : focusHeight / dt);
+        for (int j = yEdge; j < height - yEdge; j += dy) {
+            int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
+            for (int i = xEdge; i < width - xEdge; i += dx, ++total) {
+                int y = (0xff & ((int) yuv420sp[j * width + i])) - 16;
+                if (y < 0)
+                    y = 0;
+                if ((i & 1) == 0) {
+                    if (uvp > yuv420sp.length - 1) break;
+                    v = (0xff & yuv420sp[uvp++]) - 128;
+                    if (uvp > yuv420sp.length - 1) break;
+                    u = (0xff & yuv420sp[uvp++]) - 128;
+                }
+
+                int y1192 = 1192 * y;
+                int r = (y1192 + 1634 * v);
+                int g = (y1192 - 833 * v - 400 * u);
+                int b = (y1192 + 2066 * u);
+
+                if (r < 0)
+                    r = 0;
+                else if (r > 262143)
+                    r = 262143;
+                if (g < 0)
+                    g = 0;
+                else if (g > 262143)
+                    g = 262143;
+                if (b < 0)
+                    b = 0;
+                else if (b > 262143)
+                    b = 262143;
+
+                {
+                    int localTemp = 0xff000000 | ((r << 6) & 0xff0000)
+                            | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
+
+                    int rr = (localTemp | 0xff00ffff) >> 16 & 0x00ff;
+                    int gg = (localTemp | 0xffff00ff) >> 8 & 0x0000ff;
+                    int bb = (localTemp | 0xffffff00) & 0x0000ff;
+                    bright += 0.299 * rr + 0.587 * gg + 0.114 * bb;
+                }
+            }
         }
-    };
-    private final SurfaceTexture mSurfaceTexture = new SurfaceTexture(0);
+        return 0 == total ? 0 : (bright / total);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -154,7 +210,7 @@ public class ShadowEyeActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        long currentTime = System.currentTimeMillis();
+        long currentTime = SystemClock.elapsedRealtime();
         if (currentTime - mLastBackPress > 500) {
             mLastBackPress = currentTime;
         } else {
@@ -197,8 +253,8 @@ public class ShadowEyeActivity extends Activity {
 
     private void handleKeyPress(boolean backCamera) {
         mVibrator.vibrate(50);
-        if(mCameraStatue == NULL_MODE) {
-            long currentTime = System.currentTimeMillis();
+        if (mCameraStatue == NULL_MODE) {
+            long currentTime = SystemClock.elapsedRealtime();
             if (mLastVolumeKeyPressTime + 3000 < currentTime) {
                 mLastVolumeKeyPressTime = currentTime;
                 mBackCamera = backCamera;
@@ -210,7 +266,7 @@ public class ShadowEyeActivity extends Activity {
             }
         }
         if (mBackCamera == backCamera) {
-            if(mCameraStatue==PHOTO_MODE) {
+            if (mCameraStatue == PHOTO_MODE) {
                 mCamera.takePicture(null, null, mPictureCallback);
             } else if (mCameraStatue == NULL_MODE) {
                 mCameraStatue = PHOTO_MODE;
@@ -220,64 +276,6 @@ public class ShadowEyeActivity extends Activity {
             closeCamera();
             mCameraStatue = NULL_MODE;
         }
-    }
-
-    /**
-     * 通过YUV420SP数组 计算出亮度
-     *
-     * @param yuv420sp 图像帧数组
-     * @param width    宽度
-     * @param height   高度
-     * @return 返回亮度, 这亮度值始终大于0
-     */
-    private static double getYUV420SPLight(byte[] yuv420sp, int width,
-                                           int height) {
-        double bright = 0;
-        final int frameSize = width * height;
-        for (int j = 0, yp = 0; j < height; j++) {
-            int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
-            for (int i = 0; i < width; i++, yp++) {
-                int y = (0xff & ((int) yuv420sp[yp])) - 16;
-                if (y < 0)
-                    y = 0;
-                if ((i & 1) == 0) {
-                    if (uvp > yuv420sp.length - 1) break;
-                    v = (0xff & yuv420sp[uvp++]) - 128;
-                    if (uvp > yuv420sp.length - 1) break;
-                    u = (0xff & yuv420sp[uvp++]) - 128;
-                }
-
-                int y1192 = 1192 * y;
-                int r = (y1192 + 1634 * v);
-                int g = (y1192 - 833 * v - 400 * u);
-                int b = (y1192 + 2066 * u);
-
-                if (r < 0)
-                    r = 0;
-                else if (r > 262143)
-                    r = 262143;
-                if (g < 0)
-                    g = 0;
-                else if (g > 262143)
-                    g = 262143;
-                if (b < 0)
-                    b = 0;
-                else if (b > 262143)
-                    b = 262143;
-
-                {
-                    int localTemp = 0xff000000 | ((r << 6) & 0xff0000)
-                            | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
-
-                    int rr = (localTemp | 0xff00ffff) >> 16 & 0x00ff;
-                    int gg = (localTemp | 0xffff00ff) >> 8 & 0x0000ff;
-                    int bb = (localTemp | 0xffffff00) & 0x0000ff;
-                    bright = bright + 0.299 * rr + 0.587 * gg + 0.114 * bb;
-                }
-            }
-        }
-
-        return bright / yuv420sp.length;
     }
 
     private void closeCamera() {
