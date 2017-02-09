@@ -35,18 +35,6 @@ public class ShadowEyeActivity extends Activity {
     private WakeLock mWakeLock = null;
     private AudioManager mAudioManager;
     private Camera mCamera = null;
-    private Vibrator mVibrator = null;
-    private String mCurrentPath;
-    private final PictureCallback mPictureCallback = new PictureCallback() {
-        @Override
-        public void onPictureTaken(byte[] data, Camera camera) {
-            long l[] = {0, 100, 100, 100};
-            mVibrator.vibrate(l, -1);
-            savePicture(data);
-            mCamera.startPreview();
-            mCamera.setPreviewCallback(mPreviewCallback);
-        }
-    };
     private final AutoFocusCallback mAutoFocusCallback = new AutoFocusCallback() {
         @Override
         public void onAutoFocus(boolean success, Camera camera) {
@@ -61,6 +49,8 @@ public class ShadowEyeActivity extends Activity {
             }
         }
     };
+    private Vibrator mVibrator = null;
+    private String mCurrentPath;
     private long mLastBackPress = 0;
     private int mCameraStatue = NULL_MODE;
     private boolean mBackCamera = true;
@@ -101,10 +91,20 @@ public class ShadowEyeActivity extends Activity {
             }
         }
     };
+    private final PictureCallback mPictureCallback = new PictureCallback() {
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            long l[] = {0, 100, 100, 100};
+            mVibrator.vibrate(l, -1);
+            savePicture(data);
+            mCamera.startPreview();
+            mCamera.setPreviewCallback(mPreviewCallback);
+        }
+    };
     private long mLastVolumeKeyPressTime = 0;
 
     /**
-     * 通过YUV420SP数组 计算出亮度
+     * 通过YUV420SP数组 计算出中心区域亮度
      *
      * @param yuv420sp 图像帧数组
      * @param width    宽度
@@ -115,48 +115,11 @@ public class ShadowEyeActivity extends Activity {
                                           int height) {
         double bright = 0;
         int total = 0;
-        final int frameSize = width * height, xEdge = width / 3, yEdge = height / 3, focusWidth = width - xEdge * 2, focusHeight = height - yEdge * 2;
+        final int xEdge = width / 3, yEdge = height / 3, focusWidth = width - xEdge * 2, focusHeight = height - yEdge * 2;
         final int dt = 32, dx = (focusWidth <= dt ? 1 : focusWidth / dt), dy = (focusHeight <= dt ? 1 : focusHeight / dt);
         for (int j = yEdge; j < height - yEdge; j += dy) {
-            int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
             for (int i = xEdge; i < width - xEdge; i += dx, ++total) {
-                int y = (0xff & ((int) yuv420sp[j * width + i])) - 16;
-                if (y < 0)
-                    y = 0;
-                if ((i & 1) == 0) {
-                    if (uvp > yuv420sp.length - 1) break;
-                    v = (0xff & yuv420sp[uvp++]) - 128;
-                    if (uvp > yuv420sp.length - 1) break;
-                    u = (0xff & yuv420sp[uvp++]) - 128;
-                }
-
-                int y1192 = 1192 * y;
-                int r = (y1192 + 1634 * v);
-                int g = (y1192 - 833 * v - 400 * u);
-                int b = (y1192 + 2066 * u);
-
-                if (r < 0)
-                    r = 0;
-                else if (r > 262143)
-                    r = 262143;
-                if (g < 0)
-                    g = 0;
-                else if (g > 262143)
-                    g = 262143;
-                if (b < 0)
-                    b = 0;
-                else if (b > 262143)
-                    b = 262143;
-
-                {
-                    int localTemp = 0xff000000 | ((r << 6) & 0xff0000)
-                            | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
-
-                    int rr = (localTemp | 0xff00ffff) >> 16 & 0x00ff;
-                    int gg = (localTemp | 0xffff00ff) >> 8 & 0x0000ff;
-                    int bb = (localTemp | 0xffffff00) & 0x0000ff;
-                    bright += 0.299 * rr + 0.587 * gg + 0.114 * bb;
-                }
+                bright += (0xff & ((int) yuv420sp[j * width + i]));
             }
         }
         return 0 == total ? 0 : (bright / total);
