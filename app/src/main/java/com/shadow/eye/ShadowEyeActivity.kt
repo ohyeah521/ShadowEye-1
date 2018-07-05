@@ -4,27 +4,18 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.SurfaceTexture
 import android.hardware.Camera
-import android.hardware.Camera.AutoFocusCallback
-import android.hardware.Camera.Parameters
-import android.hardware.Camera.PictureCallback
-import android.hardware.Camera.PreviewCallback
+import android.hardware.Camera.*
 import android.media.AudioManager
-import android.os.Bundle
-import android.os.Environment
-import android.os.PowerManager
+import android.os.*
 import android.os.PowerManager.WakeLock
-import android.os.SystemClock
-import android.os.Vibrator
 import android.view.KeyEvent
 import android.view.Window
 import android.view.WindowManager
-
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -248,19 +239,20 @@ class ShadowEyeActivity : Activity() {
             camera.setDisplayOrientation(90)
 
             try {
-                val p = camera.parameters
-                if (p != null) {
+                val parameters = camera.parameters
+                if (parameters != null) {
                     if (backCamera) {
-                        p.flashMode = Parameters.FLASH_MODE_OFF
-                        p.set("orientation", "portrait")
-                        p.setRotation(90)
+                        parameters.flashMode = Parameters.FLASH_MODE_OFF
+                        parameters.setRotation(90)
                     } else {
-                        p.set("orientation", "portrait")
-                        p.setRotation(270)
+                        parameters.setRotation(270)
                     }
-                    p.setPreviewSize(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT)
-                    p.antibanding = Parameters.ANTIBANDING_60HZ
-                    camera.parameters = p
+                    parameters.sceneMode = Parameters.SCENE_MODE_PORTRAIT
+                    val pictureSize = parameters.supportedPictureSizes.firstOrNull()
+                    if (pictureSize != null) parameters.setPictureSize(pictureSize.width, pictureSize.height)
+                    parameters.setPreviewSize(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT)
+                    parameters.antibanding = Parameters.ANTIBANDING_60HZ
+                    camera.parameters = parameters
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
