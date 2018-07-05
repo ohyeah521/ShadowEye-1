@@ -1,5 +1,8 @@
 # ShadowEye
 
+## V1.3
+Adjust some phone
+
 ## V1.2
 Upgrade camera focus algorithm
 
