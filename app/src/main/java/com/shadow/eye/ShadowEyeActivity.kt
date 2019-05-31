@@ -20,12 +20,19 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.hardware.Camera.Parameters.FOCUS_MODE_AUTO
+import java.io.ByteArrayOutputStream
+
 
 class ShadowEyeActivity : Activity() {
     private val mSurfaceTexture = SurfaceTexture(0)
     private var mWakeLock: WakeLock? = null
     private var mAudioManager: AudioManager? = null
     private var mCamera: Camera? = null
+    private var mCameraInfo: CameraInfo? = null
     private val mAutoFocusCallback: AutoFocusCallback = object : AutoFocusCallback {
         override fun onAutoFocus(success: Boolean, camera: Camera) {
             if (success) {
@@ -61,7 +68,7 @@ class ShadowEyeActivity : Activity() {
                     lastLight = light
                     stableTime = currentTime
                     isFocused = false
-                } else if (!isFocused) { // If Change Little ,Focus Camera
+                } else if (!isFocused) { // If Change Little, Focus Camera
                     if (currentTime - stableTime > 500) {
                         mVibrator!!.vibrate(50)
                         mCamera!!.setPreviewCallback(null)
@@ -86,12 +93,20 @@ class ShadowEyeActivity : Activity() {
         }
     }
     private val mPictureCallback = PictureCallback { data, camera ->
-        val l = longArrayOf(0, 100, 100, 100)
-        mVibrator!!.vibrate(l, -1)
-        savePicture(data)
+        mVibrator!!.vibrate(longArrayOf(0, 100, 100, 100), -1)
+        savePicture(rotateJpeg(data, mCameraInfo!!.orientation))
         mCamera!!.startPreview()
         mCamera!!.setPreviewCallback(mPreviewCallback)
     }
+
+    private fun rotateJpeg(data: ByteArray, orientation: Int): ByteArray {
+        if(orientation == 0) return data
+        val bitmap = BitmapFactory.decodeByteArray(data, 0, data.size)
+        val newBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height,
+                Matrix().apply { setRotate(orientation.toFloat(), bitmap.width.toFloat() / 2, bitmap.height.toFloat() / 2) }, true)
+        return ByteArrayOutputStream().apply { newBitmap.compress(Bitmap.CompressFormat.JPEG, 100, this) }.toByteArray()
+    }
+
     private var mLastVolumeKeyPressTime = 0L
 
     private val dateString: String
@@ -221,46 +236,41 @@ class ShadowEyeActivity : Activity() {
             mCamera!!.stopPreview()
             mCamera!!.release()
             mCamera = null
+            mCameraInfo = null
         }
     }
 
-    private fun findCamera(back: Boolean): Int {
+    private fun startCamera() {
+        var cameraIndex = -1
         val cameraInfo = Camera.CameraInfo()
-        val cameraCount = Camera.getNumberOfCameras() // get cameras number
-        val value = if (back) Camera.CameraInfo.CAMERA_FACING_BACK else Camera.CameraInfo.CAMERA_FACING_FRONT
-        for (camIdx in 0 until cameraCount) {
+        val cameraFacing = if (mBackCamera) Camera.CameraInfo.CAMERA_FACING_BACK else Camera.CameraInfo.CAMERA_FACING_FRONT
+        for (camIdx in 0 until Camera.getNumberOfCameras()) {
             Camera.getCameraInfo(camIdx, cameraInfo)
-            if (cameraInfo.facing == value) {
-                return camIdx
+            if (cameraInfo.facing == cameraFacing) {
+                cameraIndex = camIdx
+                break
             }
         }
-        return -1
-    }
-
-    // Main Func of Catch Camera
-    private fun openCamera(backCamera: Boolean): Camera? {
-        val cameraIndex = findCamera(backCamera)
         if (cameraIndex == -1) {
-            return null
+            return
         }
+
         try {
             val camera = Camera.open(cameraIndex)
-            camera.setDisplayOrientation(90)
+            camera.setDisplayOrientation(cameraInfo.orientation)
 
             try {
                 val parameters = camera.parameters
                 if (parameters != null) {
-                    if (backCamera) {
+                    if (mBackCamera) {
                         parameters.flashMode = Parameters.FLASH_MODE_OFF
-                        parameters.setRotation(90)
-                    } else {
-                        parameters.setRotation(270)
                     }
+                    parameters.setRotation(cameraInfo.orientation)
                     parameters.sceneMode = Parameters.SCENE_MODE_PORTRAIT
                     val pictureSize = parameters.supportedPictureSizes.firstOrNull()
                     if (pictureSize != null) parameters.setPictureSize(pictureSize.width, pictureSize.height)
-                    parameters.setPreviewSize(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT)
                     parameters.antibanding = Parameters.ANTIBANDING_60HZ
+                    parameters.focusMode = FOCUS_MODE_AUTO
                     camera.parameters = parameters
                 }
             } catch (e: Exception) {
@@ -268,18 +278,12 @@ class ShadowEyeActivity : Activity() {
             }
 
             camera.setPreviewTexture(mSurfaceTexture)
-            return camera
-        } catch (e1: Exception) {
-            return null
-        }
-
-    }
-
-    private fun startCamera() {
-        mCamera = openCamera(mBackCamera)
-        if (mCamera != null) {
             mCurrentPath = Environment.getExternalStorageDirectory().toString() + "/save/" + dateString
-            mCamera!!.startPreview()
+            camera.startPreview()
+            mCamera = camera
+            mCameraInfo = cameraInfo
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -302,8 +306,6 @@ class ShadowEyeActivity : Activity() {
     companion object {
         private val NULL_MODE = 0
         private val PHOTO_MODE = 1
-        private val CAMERA_PREVIEW_WIDTH = 500
-        private val CAMERA_PREVIEW_HEIGHT = 500
 
         /**
          * 通过YUV420SP数组 计算出中心区域亮度
