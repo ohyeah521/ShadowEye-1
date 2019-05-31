@@ -1,5 +1,6 @@
 package com.shadow.eye
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.graphics.SurfaceTexture
@@ -43,7 +44,7 @@ class ShadowEyeActivity : Activity() {
                 }
 
             } else {
-                mCamera!!.autoFocus(this)
+                mCamera?.autoFocus(this)
             }
         }
     }
@@ -70,8 +71,8 @@ class ShadowEyeActivity : Activity() {
                     isFocused = false
                 } else if (!isFocused) { // If Change Little, Focus Camera
                     if (currentTime - stableTime > 500) {
-                        mVibrator!!.vibrate(50)
-                        mCamera!!.setPreviewCallback(null)
+                        mVibrator?.vibrate(50)
+                        mCamera?.setPreviewCallback(null)
                         if (mBackCamera) {
                             camera.autoFocus(mAutoFocusCallback)
                         } else {
@@ -93,14 +94,14 @@ class ShadowEyeActivity : Activity() {
         }
     }
     private val mPictureCallback = PictureCallback { data, camera ->
-        mVibrator!!.vibrate(longArrayOf(0, 100, 100, 100), -1)
+        mVibrator?.vibrate(longArrayOf(0, 100, 100, 100), -1)
         savePicture(rotateJpeg(data, mCameraInfo!!.orientation))
-        mCamera!!.startPreview()
-        mCamera!!.setPreviewCallback(mPreviewCallback)
+        mCamera?.startPreview()
+        mCamera?.setPreviewCallback(mPreviewCallback)
     }
 
     private fun rotateJpeg(data: ByteArray, orientation: Int): ByteArray {
-        if(orientation == 0) return data
+        if (orientation == 0) return data
         val bitmap = BitmapFactory.decodeByteArray(data, 0, data.size)
         val newBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height,
                 Matrix().apply { setRotate(orientation.toFloat(), bitmap.width.toFloat() / 2, bitmap.height.toFloat() / 2) }, true)
@@ -177,21 +178,16 @@ class ShadowEyeActivity : Activity() {
         val dateString = dateString
         val Path = "$mCurrentPath/$dateString.zip"
         File(mCurrentPath!!).mkdirs()
-        val zipOutputStream: ZipOutputStream
+        var zipOutputStream: ZipOutputStream? = null
         try {
             zipOutputStream = ZipOutputStream(FileOutputStream(File(Path)))
-            try {
-                val zipEntry = ZipEntry("$dateString.jpg")
-                zipOutputStream.putNextEntry(zipEntry)
-                zipOutputStream.write(data)
-                zipOutputStream.flush()
-                zipOutputStream.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
-
-        } catch (e1: Exception) {
-            e1.printStackTrace()
+            zipOutputStream.putNextEntry(ZipEntry("$dateString.jpg"))
+            zipOutputStream.write(data)
+            zipOutputStream.flush()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            zipOutputStream?.close()
         }
 
     }
@@ -219,10 +215,10 @@ class ShadowEyeActivity : Activity() {
         }
         if (mBackCamera == backCamera) {
             if (mCameraStatue == PHOTO_MODE) {
-                mCamera!!.takePicture(null, null, mPictureCallback)
+                mCamera?.takePicture(null, null, mPictureCallback)
             } else if (mCameraStatue == NULL_MODE) {
                 mCameraStatue = PHOTO_MODE
-                mCamera!!.setPreviewCallback(mPreviewCallback)
+                mCamera?.setPreviewCallback(mPreviewCallback)
             }
         } else {
             closeCamera()
@@ -232,9 +228,9 @@ class ShadowEyeActivity : Activity() {
 
     private fun closeCamera() {
         if (mCamera != null) {
-            mCamera!!.setPreviewCallback(null)
-            mCamera!!.stopPreview()
-            mCamera!!.release()
+            mCamera?.setPreviewCallback(null)
+            mCamera?.stopPreview()
+            mCamera?.release()
             mCamera = null
             mCameraInfo = null
         }
@@ -287,11 +283,12 @@ class ShadowEyeActivity : Activity() {
         }
     }
 
+    @SuppressLint("InvalidWakeLockTag", "WakelockTimeout")
     private fun acquireWakeLock() {
         if (null == mWakeLock) {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "LOCK")
-            if (null != mWakeLock) mWakeLock!!.acquire()
+            mWakeLock?.acquire()
         }
     }
 
