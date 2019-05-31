@@ -1,4 +1,25 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layoutMain"
     android:layout_width="match_parent"
-    android:layout_height="match_parent" >
-</RelativeLayout>
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <View
+        android:layout_weight="1"
+        android:id="@+id/viewFinish"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"/>
+
+    <View
+        android:layout_weight="1"
+        android:id="@+id/viewBack"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"/>
+
+    <View
+        android:layout_weight="1"
+        android:id="@+id/viewFront"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"/>
+
+</LinearLayout>

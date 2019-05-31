@@ -9,8 +9,10 @@ import android.media.AudioManager
 import android.os.*
 import android.os.PowerManager.WakeLock
 import android.view.KeyEvent
+import android.view.View
 import android.view.Window
 import android.view.WindowManager
+import kotlinx.android.synthetic.main.activity_main.*
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -98,12 +100,19 @@ class ShadowEyeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            window.attributes.systemUiVisibility = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE
+        }
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
         mAudioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         mVibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         setContentView(R.layout.activity_main)
         setBrightness(1f)
         acquireWakeLock()
+
+        viewFinish.setOnClickListener { onBackPressed() } // top -> finish
+        viewBack.setOnClickListener { handleKeyPress(true) } // middle -> back
+        viewFront.setOnClickListener { handleKeyPress(false) } // bottom -> front
     }
 
     override fun onDestroy() {
